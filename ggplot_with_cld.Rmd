@@ -1,0 +1,131 @@
+---
+title: "Example CLD on ggplot"
+author: "Ezra Moses"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r}
+library(agridat)
+library(lme4)
+library(lmerTest)
+library(multcomp)
+library(emmeans)
+library(tidyverse)
+```
+
+Retrieve data set from `agridat` package. We'll use an RCB experiment of wheat, 50 varieties in 3 blocks. There are 4 variables in this data set: 
+
++ **yield**: yield of wheat
++ **gen**: genotype of wheat
++ **col**: column or block
++ **row**: row
+
+More information on the data set can be found (here)[https://search.r-project.org/CRAN/refmans/agridat/html/besag.elbatan.html].
+```{r}
+if (!require('agridat')) install.packages('agridat')
+library(agridat)
+data(besag.elbatan)
+head(besag.elbatan)
+str(besag.elbatan)
+
+# rename 'col' variable to 'block' for clarity
+besag.elbatan <- besag.elbatan %>% rename(block = col)
+
+# for simplicity, use only 5 genotypes
+besag.elbatan <- besag.elbatan %>% 
+  filter(gen %in% unique(besag.elbatan$gen)[1:10])
+
+# make sure block and genotype are factors (important for modeling later)
+besag.elbatan <- besag.elbatan %>% 
+  mutate(gen = factor(gen), block = factor(block))
+```
+
+Visualize yields by genotype.
+```{r}
+ggplot(besag.elbatan, aes(x = gen, y = yield)) + geom_boxplot()
+```
+
+
+Let's answer the question, *To what degree did genotype impact wheat yield?*
+
+We'll build a linear mixed-effect model of yield by genotype, with block as a random effect. 
+
+```{r}
+mod <- lmer(yield ~ gen + (1|block), data = besag.elbatan)
+summary(mod)
+
+aov <- anova(mod)
+aov
+```
+
+There are a couple possible methods to get compact letter displays to put on ggplots. This first method using emmeans is preferable in most cases because of its compatibility with the tidyverse, and should always be used in cases with more than 3 treatments.
+```{r}
+cld <- cld(emmeans(mod, 'gen', adjust = 'sidak'))
+cld
+
+# change numbers in .group variable to letters
+n.trt <- length(unique(besag.elbatan$gen))
+cld <- cld %>% mutate(
+  .group = str_replace_all(
+    .group, setNames(letters[1:n.trt], as.character(1:n.trt))
+    ) %>% trimws()
+)
+cld
+
+# join onto yield data
+besag.elbatan <- besag.elbatan %>% 
+  left_join(cld, by = 'gen')
+```
+
+
+The second method using `multcomp::glht` uses Tukey's HSD, which is not usually appropriate for more than 2 pairwise comparisons. This method should be used with caution.
+```{r}
+# cld2 <- cld(glht(mod, linfct = mcp(gen = 'Tukey')))
+# cld2
+# 
+# # create data frame from cld2
+# cld2 <- data.frame(gen = names(cld2$mcletters$Letters),
+#                    .group = cld2$mcletters$Letters)
+# 
+# # join onto yield data
+# besag.elbatan <- besag.elbatan %>% left_join(cld2, by = 'gen')
+```
+
+Now we can prep the data for ggplot by summarizing yields by genotype
+```{r}
+barplot_dat <- besag.elbatan %>% 
+  group_by(gen, .group) %>% 
+  summarize(
+    mean = mean(yield),
+    count = sum(!is.na(yield)),
+    se = sd(yield) / sqrt(count),
+    .groups = 'drop'
+  )
+head(barplot_dat)
+```
+
+Build the ggplot
+```{r}
+plt <- ggplot(barplot_dat) + 
+  geom_col(aes(x = gen, y = mean)) + 
+  geom_errorbar(aes(x = gen, ymin = mean - se, ymax = mean + se)) + 
+  geom_text(aes(x = gen, y = mean + se, label = toupper(.group)), vjust = -0.8) +
+  theme_classic() + 
+  labs(x = 'Genotype', y = 'Mean Yield')
+plt
+
+# Add ANOVA stats
+aov_label <- aov %>% mutate(
+  p_label = ifelse(round(`Pr(>F)`, 3) < 0.001, "<~`0.001`", 
+                   paste0("`=`~`", round(`Pr(>F)`, 3), '`')),
+  aov_label = str_glue(
+    "F[{NumDF}*`,`*{round(DenDF)}]~`=`~{round(`F value`, 1)}*`;`~P~{p_label}"
+  )
+)
+plt <- plt +
+  geom_text(data = aov_label, aes(x = Inf, y = Inf, label = aov_label), 
+            hjust = 1.1, vjust = 1.2, parse = TRUE)
+plt
+```
+
