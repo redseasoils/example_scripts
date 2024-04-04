@@ -32,7 +32,7 @@ nutrient_by_depth_plot = function(
   #' @param depth_range_var Name of column in \code{data} containing depth ranges
   #'   to be used as y axis variable in plots. Note that this variable should be
   #'   changed to an ordered factor prior to using this function, and the order of
-  #'   \emph{\textbf{factor levels should start at the deepest depth range}}.
+  #'   \emph{factor levels should start at the deepest depth range}.
   #'   Required.
   #' @param calculate_stocks Logical. Should stocks of each nutrient/property be
   #'   calculated for topsoil and subsoil (the boundary of which is specified in
@@ -207,7 +207,7 @@ nutrient_by_depth_plot = function(
           geom_text(data = cur_nutrient_stocks, fontface = 'italic',
                     aes(label = tslab, y = ifelse(is_topsoil, x_min, x_max),
                         x = -Inf),
-                    hjust = -0.1, size = 3)
+                    hjust = -0.01, size = 3)
       }
       cur_site_plots[[m]] <- plt
       names(cur_site_plots)[m] <- cur_nutrient
